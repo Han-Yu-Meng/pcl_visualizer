@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PCD 点云检视 · 横平竖直辅助面</title>
+<link rel="icon" href="data:," />
+<link rel="stylesheet" href="style.css" />
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <header class="brand">
+      <div>
+        <div class="brand-title">PCD 点云检视</div>
+        <div class="brand-sub">水平 / 竖直辅助面 · 横平竖直检查</div>
+      </div>
+      <button id="toggle-sidebar" class="icon-btn" title="收起 / 展开面板">&#9776;</button>
+    </header>
+
+    <div id="panel-scroll">
+
+      <details class="panel" open>
+        <summary>1 · 点云文件</summary>
+        <div class="panel-body">
+          <input type="file" id="file-input" accept=".pcd,.txt,.bin" multiple hidden />
+          <div class="btn-row">
+            <button id="btn-upload" class="primary">选择 PCD 文件</button>
+            <button id="btn-demo">示例房间</button>
+          </div>
+          <div class="btn-row">
+            <button id="btn-clear" class="danger-ghost">清空点云</button>
+            <button id="btn-screenshot">保存截图</button>
+          </div>
+          <div id="file-list" class="file-list"><div class="empty">尚未载入点云。可拖放 .pcd 文件到右侧视图。</div></div>
+          <p class="hint">支持 ASCII / binary / binary_compressed（LZF）编码，自动读取 x y z、rgb / rgba、intensity 字段。纯前端解析，文件不会上传。</p>
+        </div>
+      </details>
+
+      <details class="panel" open>
+        <summary>2 · 显示</summary>
+        <div class="panel-body">
+          <label class="row"><span>着色方式</span>
+            <select id="color-mode">
+              <option value="deviation">平面偏差（默认）</option>
+              <option value="height">高度 Z</option>
+              <option value="original">原始颜色 / RGB</option>
+              <option value="intensity">反射强度</option>
+              <option value="single">单色</option>
+            </select>
+          </label>
+          <div id="legend" class="legend">
+            <div class="legend-bar"></div>
+            <div class="legend-labels"><span id="legend-l0">-0.100</span><span id="legend-l1">-0.050</span><span id="legend-l2">0</span><span id="legend-l3">+0.050</span><span id="legend-l4">+0.100</span></div>
+            <div class="legend-caption" id="legend-caption">深蓝→青→绿→琥珀→红（绿=共面）；超出 ±0.100 m 为半透明深灰</div>
+          </div>
+          <label class="row"><span>点大小</span><input type="range" id="point-size" min="1" max="12" step="0.5" value="3" /><output id="point-size-val">3 px</output></label>
+          <label class="row"><span>大小模式</span>
+            <select id="size-mode"><option value="fixed">固定像素</option><option value="perspective">随距离缩放</option></select>
+          </label>
+          <label class="row"><span>单色</span><input type="color" id="single-color" value="#9ecbff" /></label>
+          <label class="row"><span>点不透明度</span><input type="range" id="point-opacity" min="0.15" max="1" step="0.05" value="1" /><output id="point-opacity-val">100%</output></label>
+          <label class="row"><span>背景</span><input type="color" id="bg-color" value="#0e1116" /></label>
+          <div class="check-row">
+            <label><input type="checkbox" id="show-axes" checked /> 坐标轴</label>
+            <label><input type="checkbox" id="show-bbox" /> 包围盒</label>
+            <label><input type="checkbox" id="show-ticks" checked /> 辅助线刻度</label>
+          </div>
+          <div class="sub-label">视角</div>
+          <div class="btn-row wrap">
+            <button data-view="iso">等轴</button><button data-view="top">俯视</button>
+            <button data-view="front">前视</button><button data-view="side">侧视</button>
+            <button id="btn-reset">重置视角</button>
+          </div>
+        </div>
+      </details>
+
+      <details class="panel" open>
+        <summary>3 · 辅助平面（重点）</summary>
+        <div class="panel-body">
+          <p class="hint">平面用于对照地面是否水平、墙面是否竖直。可用「拟合附近点」让平面自动贴合点云，再读出偏离理想方向的角度。</p>
+          <div id="plane-list"></div>
+          <button id="btn-add-plane" class="full">+ 添加辅助平面</button>
+          <div class="divider"></div>
+          <label class="row"><span>分析平面</span><select id="active-plane"></select></label>
+          <label class="row"><span>剖面厚度</span><input type="range" id="clip-thickness" min="0" max="0.5" step="0.005" value="0" /><output id="clip-thickness-val">关</output></label>
+          <label class="row"><span>偏差着色 ±</span><input type="range" id="dev-range" min="0.005" max="0.5" step="0.005" value="0.1" /><output id="dev-range-val">0.100 m</output></label>
+          <label class="row"><span>外部点不透明度</span><input type="range" id="outside-alpha" min="0.05" max="1" step="0.05" value="0.25" /><output id="outside-alpha-val">25%</output></label>
+          <label class="row"><span>拟合半径</span><input type="range" id="fit-radius" min="0.02" max="1" step="0.01" value="0.15" /><output id="fit-radius-val">0.15 m</output></label>
+          <p class="hint">「偏差着色」只对 ±色标 范围内的点上色，超出范围的点显示为半透明深灰（可用「外部点不透明度」调整）；默认 ±0.1 m，绿=共面。剖面厚度 &gt; 0 时只显示距分析平面 ±厚度 内的点，便于观察该处点是否共面。</p>
+        </div>
+      </details>
+
+      <details class="panel" open>
+        <summary>4 · 辅助线</summary>
+        <div class="panel-body">
+          <label class="row"><span>点击放置</span>
+            <select id="place-mode">
+              <option value="none">关闭</option>
+              <option value="cross">十字线（三轴）</option>
+              <option value="x">横向线 · 沿 X</option>
+              <option value="y">横向线 · 沿 Y</option>
+              <option value="z">竖直线 · 沿 Z</option>
+            </select>
+          </label>
+          <p class="hint" id="place-hint">选择一种模式后，在视图中点击分析平面即可在该点放置辅助线。</p>
+          <div class="btn-row">
+            <button id="btn-add-cross">原点十字线</button>
+            <button id="btn-add-axes">三轴长线</button>
+          </div>
+          <div class="sub-label">按坐标添加</div>
+          <div class="row3">
+            <input type="number" id="line-x" value="0" step="0.1" aria-label="x" />
+            <input type="number" id="line-y" value="0" step="0.1" aria-label="y" />
+            <input type="number" id="line-z" value="0" step="0.1" aria-label="z" />
+          </div>
+          <div class="row3">
+            <select id="line-dir"><option value="x">沿 X</option><option value="y">沿 Y</option><option value="z">沿 Z</option><option value="cross">十字线</option></select>
+            <input type="number" id="line-length" value="5" step="0.5" min="0.1" aria-label="长度" />
+            <input type="color" id="line-color" value="#ffd166" aria-label="颜色" />
+          </div>
+          <button id="btn-add-line" class="full">添加辅助线</button>
+          <div id="line-list" class="line-list"></div>
+          <button id="btn-clear-lines" class="danger-ghost full">清空辅助线</button>
+        </div>
+      </details>
+
+      <details class="panel" open>
+        <summary>5 · 检查结果</summary>
+        <div class="panel-body">
+          <div id="analysis-report" class="report">载入点云后显示。</div>
+          <button id="btn-export-report" class="full">导出检查报告 (.txt)</button>
+        </div>
+      </details>
+
+      <details class="panel">
+        <summary>使用说明</summary>
+        <div class="panel-body">
+          <p class="hint"><b>操作：</b>左键拖动旋转，右键拖动平移，滚轮缩放；鼠标悬停可读取平面上的坐标与到平面的距离。</p>
+          <p class="hint"><b>快捷键：</b> 1 等轴 / 2 俯视 / 3 前视 / 4 侧视 / R 重置 / F 拟合当前平面 / C 切换剖面。</p>
+          <p class="hint"><b>判断方法：</b>把水平面放到地面附近 → 点「拟合附近点」→ 看「偏离基准角度」；再把竖直面贴到墙面拟合一次。角度越接近 0° 越横平竖直。着色切到「平面偏差」可看正负偏差分布。</p>
+          <p class="hint">纯 HTML + JS，无后端、无上传；Three.js 通过 CDN 加载。可直接部署到 GitHub Pages。</p>
+        </div>
+      </details>
+
+    </div>
+  </aside>
+
+  <main id="stage">
+    <canvas id="gl"></canvas>
+    <div id="hud-top" class="hud">
+      <span id="hud-points">点数 0</span><span class="sep">|</span>
+      <span id="hud-plane">分析平面：—</span><span class="sep">|</span>
+      <span id="hud-hover">X — · Y — · Z —</span>
+    </div>
+    <div id="hud-bottom" class="hud">左键旋转 · 右键平移 · 滚轮缩放 · 拖放 .pcd 载入</div>
+    <canvas id="compass" width="112" height="112"></canvas>
+    <div id="drop-hint">松开以载入 PCD 文件</div>
+    <div id="toast"></div>
+    <div id="boot">正在加载 Three.js（需要访问 unpkg.com）…</div>
+  </main>
+</div>
+
+<script>
+  window.__appReady = false;
+  setTimeout(function () {
+    var boot = document.getElementById('boot');
+    if (!window.__appReady && boot) {
+      boot.textContent = '依赖加载失败：请检查网络是否能访问 unpkg.com，或把 three.js 下载到本地后修改 index.html 的 importmap。';
+      boot.classList.add('boot-error');
+    }
+  }, 15000);
+</script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

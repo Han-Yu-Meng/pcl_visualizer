@@ -1,0 +1,11 @@
+{
+  "name": "pcd-visualizer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Static PCD point-cloud viewer with level/plumb reference planes",
+  "scripts": {
+    "test": "node tests/pcd.test.js",
+    "serve": "python3 -m http.server 8080"
+  }
+}
